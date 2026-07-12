@@ -1,79 +1,66 @@
 # Feed Cleaner for LinkedIn
 
-A Chrome extension (Manifest V3, plain JS, no build step) that filters the
-LinkedIn feed based on toggleable preferences. Everything runs locally —
-no external API calls, no tracking, no data leaves your browser.
+A free Chrome extension that filters the noise out of your LinkedIn feed —
+sponsored posts, hustle-bait, engagement-hook spam, and AI-generated
+"slop" — so you see more of what you actually follow LinkedIn for.
 
-Not affiliated with, endorsed by, or sponsored by LinkedIn Corporation.
+Everything runs locally in your browser. No external servers, no analytics,
+no tracking, no data ever leaves your machine. See the
+[Privacy Policy](https://niverarg.github.io/feed_cleaner_for_linkedin/privacy-policy.html)
+for details.
 
-## Install (load unpacked)
+*Feed Cleaner for LinkedIn is an independent, unofficial project and is not
+affiliated with, endorsed by, or sponsored by LinkedIn Corporation.*
 
-1. Open `chrome://extensions` in Chrome.
-2. Enable **Developer mode** (toggle, top right).
-3. Click **Load unpacked** and select this folder.
-4. Open [linkedin.com/feed](https://www.linkedin.com/feed/). Click the
-   toolbar icon for quick toggles + a session count, or the "Settings" link
-   in the popup for the full options page (phrases, author lists, feed
-   modules, stats, backup).
+## Install
 
-## How the filters work
+**From the Chrome Web Store** *(recommended)* — search "Feed Cleaner for
+LinkedIn" in the Chrome Web Store, or use the listing link once published.
 
-Matched posts are **never deleted** — they collapse into a thin
-`1 post hidden (reason) — Always show / Show` bar, or (in ghost mode) dim to
-low opacity with a small tag. The popup shows a running count of posts
-hidden this session; the toolbar badge mirrors it per tab.
+**From source**, if you'd rather install it yourself:
+1. Download or clone this repository.
+2. Open `chrome://extensions` in Chrome.
+3. Enable **Developer mode** (toggle, top right).
+4. Click **Load unpacked** and select the folder.
 
-| Filter | How it works |
+## What it filters
+
+Every filter can be turned on or off, and posts are **never deleted** —
+they collapse into a one-line "post hidden (reason)" bar you can expand
+again with one click, or dim in place if you turn on Ghost mode.
+
+| Filter | What it catches |
 | --- | --- |
-| **Allowed authors / posts** | Right-click → *"Always show this person's posts,"* or click "Always show" on a placeholder bar. Wins over every other filter. |
-| **Muted authors** | Right-click → *"Hide this person's posts."* Checked before every content filter. |
-| **Sponsored / Promoted** | Text-match on a standalone "Promoted" header line. |
-| **Muted phrases** | Case-insensitive match against post text. Plain text or `/regex/` syntax, one per line, editable in Settings. |
-| **Occasion posts** | New-job, work-anniversary, and certificate template phrases — near-verbatim LinkedIn boilerplate, so one match hides. |
-| **12-line-hook posts** | Many short lines in the first ~300 characters. Adjustable sensitivity: Loose / Medium / Strict. |
-| **Fake hustle stories** | Scores against phrases like *"$0 to $1M"*, *"left my 6-figure job"*, *"they laughed at me."* Two+ matches hides; one match plus hook formatting also hides. |
-| **AI-generated posts** | Weighted stylometric signal list (phrase tells + structural tells like em-dash density). Own sensitivity slider. |
-| **Feed modules** *(opt-in, off by default)* | "Suggested for you," "People you may know," and the News sidebar — text-heuristic based, unvalidated against the live DOM; see [CLAUDE.md](CLAUDE.md). |
-| **Dimfluencers** | Not implemented — no reliable local signal. Toggle stays greyed out. |
+| **Sponsored / Promoted** | Ads in the feed. |
+| **Muted phrases** | Any phrase you choose — plain text or advanced regex, one per line. |
+| **Occasion posts** | New-job announcements, work anniversaries, certificate/course-completion posts. |
+| **Hook-format posts** | "The 3 things that changed my career:" style posts — many short punchy lines up top. Adjustable sensitivity. |
+| **Fake hustle stories** | "$0 to $1M", "they laughed at me", "I got fired and then..." — the whole genre. |
+| **AI-generated posts** | Posts that read like they were written by a chatbot. Adjustable sensitivity. |
+| **Feed modules** *(optional)* | "Suggested for you," "People you may know," and the News sidebar. |
 
-Other controls: a master pause switch, a 30-minute snooze, ghost mode
-(dim instead of collapse), lifetime stats by reason, and JSON export/import
-of your entire settings.
+You can also:
+- **Mute** or **always show** specific people — right-click their name in the feed.
+- **Pause** filtering entirely, or **snooze** it for 30 minutes, from the toolbar.
+- See **lifetime stats** on what's been hidden and why.
+- **Export/import** all your settings as a file, to back them up or move to another machine.
 
-Settings persist via `chrome.storage.sync`, so they follow you across
-devices when signed into Chrome.
+Settings sync across your devices through Chrome's built-in sync, the same
+way your bookmarks do — never through us.
 
-## ⚠️ Selector fragility
+## Known limitations
 
-LinkedIn's DOM structure **changes periodically** (class renames, feed
-re-renders). The extension supports both feed variants LinkedIn currently
-ships: the 2026 rewrite (obfuscated class names; hooks into
-`data-testid="mainFeed"` / `expandable-text-box` and `data-lazy-mount-id`
-post wrappers) and the classic DOM (`feed-shared-update-v2` etc.). If posts
-stop being detected after a LinkedIn update, the selectors to fix are all
-collected in one place: the `SELECTORS` object at the top of
-[content.js](content.js). Inspect a live feed post with DevTools and update
-them there.
+- "Promoted" and occasion-post detection currently match English-language
+  labels only.
+- AI-post and hook-format detection are heuristic, not perfect — you can
+  always mark a wrongly-hidden post "Always show," or a person as allowed,
+  to fix it permanently.
 
-Note: "Promoted" and occasion-phrase detection match English labels only.
-If your LinkedIn UI language isn't English, add the localized phrases in
-content.js.
+## Feedback / issues
 
-## File structure
+Found a bug, or a post that should (or shouldn't) have been filtered?
+Open an issue on this repository.
 
-```
-manifest.json         MV3 manifest — permissions: storage, activeTab, contextMenus
-shared.js              Default settings — single source of truth, loaded everywhere
-content.js             Filters, MutationObserver, collapse/ghost UI, context-menu handling
-background.js          Service worker: context menus, per-tab badge, lifetime stats
-popup.html/js          Quick toggle UI (pause, snooze, filters, sliders)
-options.html/js        Full settings dashboard (phrases, authors, modules, stats, backup)
-icons/                 16 / 48 / 128 PNGs + source SVGs
-privacy-policy.html    Standalone privacy policy for the Web Store listing
-STORE_LISTING.md       Copy + checklist for Chrome Web Store submission
-```
+## License
 
-## Publishing to the Chrome Web Store
-
-See [STORE_LISTING.md](STORE_LISTING.md) for the listing copy, permission
-justifications, privacy-practices answers, and the packaging command.
+MIT — see [LICENSE](LICENSE).
