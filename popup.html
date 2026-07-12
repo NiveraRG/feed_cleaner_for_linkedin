@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Feed Cleaner for LinkedIn</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: #1d1d1f;
+      background: #fff;
+    }
+    header {
+      padding: 12px 16px;
+      background: #0a66c2;
+      color: #fff;
+    }
+    header h1 { margin: 0; font-size: 15px; }
+    header .count { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+    main { padding: 8px 16px 12px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+      gap: 8px;
+    }
+    .row label { flex: 1; cursor: pointer; }
+    .row label.switch { flex: 0 0 34px; }
+    .row.disabled label { color: #aaa; cursor: default; }
+    .row.master { font-weight: 600; }
+    .soon {
+      font-size: 10px;
+      color: #999;
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
+    /* Simple toggle switch */
+    .switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle {
+      position: absolute; inset: 0; cursor: pointer;
+      background: #ccc; border-radius: 18px; transition: 0.15s;
+    }
+    .slider-toggle::before {
+      content: ""; position: absolute; height: 14px; width: 14px;
+      left: 2px; top: 2px; background: #fff; border-radius: 50%;
+      transition: 0.15s;
+    }
+    .switch input:checked + .slider-toggle { background: #0a66c2; }
+    .switch input:checked + .slider-toggle::before { transform: translateX(16px); }
+    .switch input:disabled + .slider-toggle { cursor: default; opacity: 0.5; }
+
+    .sub { padding: 6px 0 10px; border-bottom: 1px solid #eee; }
+    .hint { font-size: 11px; color: #888; margin: 2px 0 4px; }
+    .sensitivity { display: flex; align-items: center; gap: 8px; }
+    .sensitivity input[type="range"] { flex: 1; }
+    .sensitivity .level-label { width: 52px; font-size: 11px; color: #555; text-align: right; }
+
+    #snoozeBtn {
+      border: 1px solid #0a66c2; background: #fff; color: #0a66c2;
+      border-radius: 14px; padding: 3px 12px; font-size: 12px;
+      font-weight: 600; cursor: pointer;
+    }
+    #snoozeBtn.active { background: #0a66c2; color: #fff; }
+    #snoozeState { font-size: 11px; color: #b7791f; }
+
+    /* Everything below the master switch greys out while paused */
+    main.paused .pausable { opacity: 0.45; pointer-events: none; }
+
+    footer {
+      padding: 8px 16px 12px; border-top: 1px solid #eee;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    footer a { color: #0a66c2; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Feed Cleaner for LinkedIn</h1>
+    <div class="count"><span id="hiddenCount">0</span> posts hidden in this tab</div>
+  </header>
+  <main id="main">
+    <div class="row master">
+      <label for="enabled">Filtering enabled</label>
+      <label class="switch">
+        <input type="checkbox" id="enabled">
+        <span class="slider-toggle"></span>
+      </label>
+    </div>
+    <div class="row pausable">
+      <span id="snoozeState">Pause temporarily</span>
+      <button id="snoozeBtn">Snooze 30 min</button>
+    </div>
+
+    <div class="pausable">
+      <div class="row">
+        <label for="filterPromoted">Hide sponsored / promoted posts</label>
+        <label class="switch">
+          <input type="checkbox" id="filterPromoted">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <label for="filterKeywords">Hide muted phrases</label>
+        <label class="switch">
+          <input type="checkbox" id="filterKeywords">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <label for="filterOccasions">Hide new-job / anniversary posts</label>
+        <label class="switch">
+          <input type="checkbox" id="filterOccasions">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <label for="filterHooks">Filter 12-line-hook posts</label>
+        <label class="switch">
+          <input type="checkbox" id="filterHooks">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <div class="sub">
+        <div class="sensitivity">
+          <span class="hint">Sensitivity</span>
+          <input type="range" id="hookSensitivity" min="0" max="2" step="1">
+          <span class="level-label" id="sensitivityLabel">Medium</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="filterHustle">Mute fake hustle stories</label>
+        <label class="switch">
+          <input type="checkbox" id="filterHustle">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <label for="filterAI">Hide AI-generated posts</label>
+        <label class="switch">
+          <input type="checkbox" id="filterAI">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <div class="sub">
+        <div class="sensitivity">
+          <span class="hint">Sensitivity</span>
+          <input type="range" id="aiSensitivity" min="0" max="2" step="1">
+          <span class="level-label" id="aiSensitivityLabel">Medium</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="ghostMode">Ghost mode (dim instead of hide)</label>
+        <label class="switch">
+          <input type="checkbox" id="ghostMode">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="row disabled">
+        <label>Hide dimfluencers <span class="soon">coming soon</span></label>
+        <label class="switch">
+          <input type="checkbox" disabled>
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <span class="hint" style="margin:0;">Phrases, authors &amp; stats live in settings</span>
+    <a id="openOptions">Settings ⚙</a>
+  </footer>
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
