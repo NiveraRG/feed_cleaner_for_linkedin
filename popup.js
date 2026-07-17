@@ -1,14 +1,11 @@
-// Feed Cleaner for LinkedIn — popup logic
+// Feed Cleaner for LinkedIn - popup logic
 // Quick controls only: master pause, snooze, filter toggles, sensitivity.
 // Phrase/author management, modules, stats, and backup live in options.html.
 // Reads/writes chrome.storage.sync so the content script picks changes up
 // live via storage.onChanged (no page reload needed).
-// LFC_DEFAULTS / LFC_SENSITIVITY_LEVELS come from shared.js.
+// LFC_DEFAULTS / LFC_SENSITIVITY_LEVELS / $ / slider helpers come from shared.js.
 
-const SENSITIVITY_LABELS = { loose: 'Loose', medium: 'Medium', strict: 'Strict' };
 const SNOOZE_MINUTES = 30;
-
-const $ = (id) => document.getElementById(id);
 
 const TOGGLE_IDS = [
   'enabled',
@@ -27,17 +24,10 @@ let snoozeTick = null;
 
 chrome.storage.sync.get(LFC_DEFAULTS, (s) => {
   for (const id of TOGGLE_IDS) $(id).checked = !!s[id];
-  // Unknown stored value → fall back to medium for both slider and label,
-  // so they can't disagree.
-  const hookIdx = LFC_SENSITIVITY_LEVELS.indexOf(s.hookSensitivity);
-  $('hookSensitivity').value = hookIdx >= 0 ? hookIdx : 1;
-  $('sensitivityLabel').textContent =
-    SENSITIVITY_LABELS[LFC_SENSITIVITY_LEVELS[hookIdx >= 0 ? hookIdx : 1]];
-  const aiIdx = LFC_SENSITIVITY_LEVELS.indexOf(s.aiSensitivity);
-  $('aiSensitivity').value = aiIdx >= 0 ? aiIdx : 1;
-  $('aiSensitivityLabel').textContent =
-    SENSITIVITY_LABELS[LFC_SENSITIVITY_LEVELS[aiIdx >= 0 ? aiIdx : 1]];
+  lfcSetSlider('hookSensitivity', 'sensitivityLabel', s.hookSensitivity);
+  lfcSetSlider('aiSensitivity', 'aiSensitivityLabel', s.aiSensitivity);
   renderPauseState(s.enabled, s.snoozeUntil);
+  renderDeepFocus(s.deepFocus, s.deepFocusUntil);
 });
 
 // Per-tab hidden count comes straight from the content script (the old
@@ -71,7 +61,7 @@ function renderPauseState(enabled, snoozeUntil) {
   if (snoozed) {
     const update = () => {
       const mins = Math.max(0, Math.ceil((snoozeUntil - Date.now()) / 60000));
-      $('snoozeState').textContent = `Paused — resumes in ${mins} min`;
+      $('snoozeState').textContent = `Paused - resumes in ${mins} min`;
     };
     update();
     snoozeTick = setInterval(update, 15000);
@@ -89,12 +79,52 @@ $('snoozeBtn').addEventListener('click', () => {
   });
 });
 
+// --- Deep Focus (independent of pause/snooze - see shared.js) --------------
+
+let dfTick = null;
+
+function renderDeepFocus(deepFocus, deepFocusUntil) {
+  const timed = !deepFocus && Date.now() < (deepFocusUntil || 0);
+  const active = deepFocus || timed;
+  $('dfOn').classList.toggle('active', deepFocus);
+  $('dfHour').classList.toggle('active', timed);
+  $('dfOff').classList.toggle('active', !active);
+  if (dfTick) {
+    clearInterval(dfTick);
+    dfTick = null;
+  }
+  if (timed) {
+    const update = () => {
+      const mins = Math.max(0, Math.ceil((deepFocusUntil - Date.now()) / 60000));
+      $('deepFocusState').textContent = `Feed hidden - ${mins} min left`;
+    };
+    update();
+    dfTick = setInterval(update, 15000);
+  } else {
+    $('deepFocusState').textContent = deepFocus ? 'Feed hidden until turned off' : '';
+  }
+}
+
+$('dfOn').addEventListener('click', () => {
+  syncSet({ deepFocus: true, deepFocusUntil: 0 });
+  renderDeepFocus(true, 0);
+});
+$('dfHour').addEventListener('click', () => {
+  const until = Date.now() + 60 * 60000;
+  syncSet({ deepFocus: false, deepFocusUntil: until });
+  renderDeepFocus(false, until);
+});
+$('dfOff').addEventListener('click', () => {
+  syncSet({ deepFocus: false, deepFocusUntil: 0 });
+  renderDeepFocus(false, 0);
+});
+
 // --- Toggles & sliders ----------------------------------------------------
 
 for (const id of TOGGLE_IDS) {
   $(id).addEventListener('change', (e) => {
     if (id === 'enabled') {
-      // Re-enabling also clears any running snooze — one write, one reprocess.
+      // Re-enabling also clears any running snooze - one write, one reprocess.
       syncSet({ enabled: e.target.checked, snoozeUntil: 0 });
       renderPauseState(e.target.checked, 0);
     } else {
@@ -103,17 +133,8 @@ for (const id of TOGGLE_IDS) {
   });
 }
 
-$('hookSensitivity').addEventListener('input', (e) => {
-  const level = LFC_SENSITIVITY_LEVELS[Number(e.target.value)] || 'medium';
-  $('sensitivityLabel').textContent = SENSITIVITY_LABELS[level];
-  syncSet({ hookSensitivity: level });
-});
-
-$('aiSensitivity').addEventListener('input', (e) => {
-  const level = LFC_SENSITIVITY_LEVELS[Number(e.target.value)] || 'medium';
-  $('aiSensitivityLabel').textContent = SENSITIVITY_LABELS[level];
-  syncSet({ aiSensitivity: level });
-});
+lfcWireSlider('hookSensitivity', 'sensitivityLabel', 'hookSensitivity');
+lfcWireSlider('aiSensitivity', 'aiSensitivityLabel', 'aiSensitivity');
 
 $('openOptions').addEventListener('click', () => {
   chrome.runtime.openOptionsPage();

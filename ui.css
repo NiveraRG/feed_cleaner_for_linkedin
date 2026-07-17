@@ -1,0 +1,83 @@
+/* Feed Cleaner for LinkedIn - shared UI styles for popup.html + options.html.
+   Single source of truth for the toggle switch, rows, buttons, and palette
+   so the two surfaces can't drift apart. Page-specific layout stays in each
+   page's own <style>. */
+
+:root {
+  --lfc-blue: #0a66c2;
+  --lfc-bg: #f3f2ef;
+  --lfc-border: #e0dfdc;
+  --lfc-text: #1d1d1f;
+  --lfc-hint: #888;
+  --lfc-danger: #c22;
+  --lfc-row-border: #eee;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--lfc-text);
+}
+
+/* --- Rows --------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--lfc-row-border);
+  gap: 8px;
+}
+/* BOTH rules required: the first makes label text fill the row; the second
+   stops the switch label from stretching (a stretched switch = dead zone). */
+.row label { flex: 1; cursor: pointer; }
+.row label.switch { flex: 0 0 34px; }
+.row--borderless { border-bottom: none; }
+
+/* --- Toggle switch -------------------------------------------------------
+   Must be <label class="switch"> wrapping the hidden checkbox - a <span>
+   doesn't forward clicks to the input. */
+
+.switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider-toggle {
+  position: absolute; inset: 0; cursor: pointer;
+  background: #ccc; border-radius: 18px; transition: 0.15s;
+}
+.slider-toggle::before {
+  content: ""; position: absolute; height: 14px; width: 14px;
+  left: 2px; top: 2px; background: #fff; border-radius: 50%;
+  transition: 0.15s;
+}
+.switch input:checked + .slider-toggle { background: var(--lfc-blue); }
+.switch input:checked + .slider-toggle::before { transform: translateX(16px); }
+.switch input:disabled + .slider-toggle { cursor: default; opacity: 0.5; }
+
+/* --- Sensitivity sliders ------------------------------------------------- */
+
+.sensitivity { display: flex; align-items: center; gap: 8px; }
+.sensitivity .level-label { width: 52px; font-size: 11px; color: #555; }
+
+/* --- Text helpers --------------------------------------------------------- */
+
+.hint { font-size: 12px; color: var(--lfc-hint); margin: 4px 0; }
+.hint--flush { margin: 0; }
+.hint--grow { flex: 1; }
+
+/* --- Buttons --------------------------------------------------------------- */
+
+.btn {
+  border: 1px solid var(--lfc-blue); background: #fff; color: var(--lfc-blue);
+  border-radius: 16px; padding: 5px 14px; font-size: 13px; font-weight: 600;
+  cursor: pointer; margin-right: 8px;
+}
+.btn.primary { background: var(--lfc-blue); color: #fff; }
+.danger {
+  border: none; background: none; color: var(--lfc-danger); cursor: pointer;
+  font-size: 12px; font-weight: 600;
+}
+
+/* --- Spacing utilities ------------------------------------------------------ */
+
+.mt-6 { margin-top: 6px; }
+.mt-10 { margin-top: 10px; }

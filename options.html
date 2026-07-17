@@ -2,71 +2,47 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Feed Cleaner for LinkedIn — Settings</title>
+  <title>Feed Cleaner for LinkedIn - Settings</title>
+  <link rel="stylesheet" href="ui.css">
   <style>
-    body {
-      margin: 0; background: #f3f2ef; color: #1d1d1f;
-      font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px;
-    }
+    /* Options-specific layout; shared rows/switches/buttons live in ui.css. */
+    :root { --lfc-row-border: #f0efed; }
+    body { margin: 0; background: var(--lfc-bg); font-size: 14px; }
     header {
-      background: #0a66c2; color: #fff; padding: 18px 0;
+      background: var(--lfc-blue); color: #fff; padding: 18px 0;
     }
     header .wrap { display: flex; justify-content: space-between; align-items: baseline; }
     header h1 { margin: 0; font-size: 18px; }
     header .version { font-size: 12px; opacity: 0.8; }
     .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
     section {
-      background: #fff; border: 1px solid #e0dfdc; border-radius: 10px;
+      background: #fff; border: 1px solid var(--lfc-border); border-radius: 10px;
       padding: 16px 20px; margin: 16px 0;
     }
     h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 0 0 8px; }
-    .row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 0; border-bottom: 1px solid #f0efed; gap: 12px;
-    }
+    .row { gap: 12px; }
     .row:last-child { border-bottom: none; }
-    .row label { flex: 1; cursor: pointer; }
-    .row label.switch { flex: 0 0 34px; }
-    .row .desc { font-size: 12px; color: #888; display: block; margin-top: 2px; }
-    .switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider-toggle {
-      position: absolute; inset: 0; cursor: pointer;
-      background: #ccc; border-radius: 18px; transition: 0.15s;
-    }
-    .slider-toggle::before {
-      content: ""; position: absolute; height: 14px; width: 14px;
-      left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.15s;
-    }
-    .switch input:checked + .slider-toggle { background: #0a66c2; }
-    .switch input:checked + .slider-toggle::before { transform: translateX(16px); }
-    .sensitivity { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; }
+    .row .desc { font-size: 12px; color: var(--lfc-hint); display: block; margin-top: 2px; }
+    .sensitivity { gap: 10px; padding: 4px 0 8px; }
     .sensitivity input[type="range"] { flex: 0 0 160px; }
-    .sensitivity .level-label { font-size: 12px; color: #555; width: 52px; }
+    .sensitivity .level-label { font-size: 12px; }
     .sensitivity .hint { flex: 1; }
     textarea {
       width: 100%; box-sizing: border-box; height: 110px; font-size: 13px;
       font-family: ui-monospace, Consolas, monospace;
       border: 1px solid #ddd; border-radius: 6px; padding: 8px; resize: vertical;
     }
-    .hint { font-size: 12px; color: #888; margin: 4px 0; }
     ul.authors { list-style: none; margin: 6px 0 0; padding: 0; }
     ul.authors li {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f0efed;
+      padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--lfc-row-border);
     }
     ul.authors li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    ul.authors button, .danger {
-      border: none; background: none; color: #c22; cursor: pointer;
+    ul.authors button {
+      border: none; background: none; color: var(--lfc-danger); cursor: pointer;
       font-size: 12px; font-weight: 600;
     }
     .empty { font-size: 12px; color: #999; padding: 6px 0; }
-    .btn {
-      border: 1px solid #0a66c2; background: #fff; color: #0a66c2;
-      border-radius: 16px; padding: 5px 14px; font-size: 13px; font-weight: 600;
-      cursor: pointer; margin-right: 8px;
-    }
-    .btn.primary { background: #0a66c2; color: #fff; }
     .stats-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
     .stat {
       background: #f7f6f4; border: 1px solid #e9e8e6; border-radius: 8px;
@@ -84,13 +60,18 @@
 </head>
 <body>
   <header><div class="wrap">
-    <h1>Feed Cleaner for LinkedIn — Settings</h1>
+    <h1>Feed Cleaner for LinkedIn - Settings</h1>
     <span class="version" id="version"></span>
   </div></header>
   <div class="wrap">
 
     <section>
       <h2>Filters</h2>
+      <div class="row">
+        <label for="deepFocus">Deep Focus
+          <span class="desc">Hide the entire feed behind a calm panel - independent of the filters below</span></label>
+        <label class="switch"><input type="checkbox" id="deepFocus"><span class="slider-toggle"></span></label>
+      </div>
       <div class="row">
         <label for="filterPromoted">Hide sponsored / promoted posts</label>
         <label class="switch"><input type="checkbox" id="filterPromoted"><span class="slider-toggle"></span></label>
@@ -105,7 +86,8 @@
         <label class="switch"><input type="checkbox" id="filterOccasions"><span class="slider-toggle"></span></label>
       </div>
       <div class="row">
-        <label for="filterHooks">Filter 12-line-hook posts</label>
+        <label for="filterHooks">Hide hook-bait posts
+          <span class="desc">Posts built from many one-line “hook” sentences</span></label>
         <label class="switch"><input type="checkbox" id="filterHooks"><span class="slider-toggle"></span></label>
       </div>
       <div class="sensitivity">
@@ -128,7 +110,7 @@
       </div>
       <div class="row">
         <label for="ghostMode">Ghost mode
-          <span class="desc">Dim filtered posts instead of collapsing them — useful for tuning sensitivity</span></label>
+          <span class="desc">Dim filtered posts instead of collapsing them - useful for tuning sensitivity</span></label>
         <label class="switch"><input type="checkbox" id="ghostMode"><span class="slider-toggle"></span></label>
       </div>
     </section>
@@ -142,7 +124,7 @@
 
     <section>
       <h2>Feed modules</h2>
-      <div class="hint">Remove non-post clutter from the feed and sidebar (experimental — selectors are heuristic).</div>
+      <div class="hint">Remove non-post clutter from the feed and sidebar (experimental - selectors are heuristic).</div>
       <div class="row">
         <label for="modSuggested">Hide “Suggested for you” units</label>
         <label class="switch"><input type="checkbox" id="modSuggested"><span class="slider-toggle"></span></label>
@@ -167,8 +149,8 @@
       <h2>Always-shown authors</h2>
       <div class="hint">Never filtered, whatever they post. Right-click an author → “Always show this person's posts”.</div>
       <ul class="authors" id="allowedList"></ul>
-      <div class="row" style="border:none;padding-top:12px;">
-        <span class="hint" style="flex:1;">Individually allowed posts: <span id="allowedPostCount">0</span></span>
+      <div class="row row--borderless">
+        <span class="hint hint--grow">Individually allowed posts: <span id="allowedPostCount">0</span></span>
         <button class="danger" id="clearAllowedPosts">Clear</button>
       </div>
     </section>
@@ -177,14 +159,14 @@
       <h2>Statistics</h2>
       <div class="stats-grid" id="statsGrid"></div>
       <div class="hint" id="statsSince"></div>
-      <button class="danger" id="resetStats" style="margin-top:6px;">Reset statistics</button>
+      <button class="danger mt-6" id="resetStats">Reset statistics</button>
     </section>
 
     <section>
       <h2>Backup</h2>
       <div class="hint">Export your filters and settings to a file, or import a previously exported one.
-        Everything stays on this machine — nothing is uploaded anywhere.</div>
-      <div style="margin-top:10px;">
+        Everything stays on this machine - nothing is uploaded anywhere.</div>
+      <div class="mt-10">
         <button class="btn primary" id="exportBtn">Export settings</button>
         <button class="btn" id="importBtn">Import settings…</button>
         <input type="file" id="importFile" accept="application/json,.json">
@@ -193,7 +175,7 @@
     </section>
 
     <footer>
-      Feed Cleaner for LinkedIn — runs entirely in your browser. No data leaves this machine.<br>
+      Feed Cleaner for LinkedIn - runs entirely in your browser. No data leaves this machine.<br>
       Not affiliated with, endorsed by, or sponsored by LinkedIn Corporation. “LinkedIn” is a trademark of LinkedIn Corporation.
     </footer>
   </div>

@@ -1,6 +1,6 @@
-// Feed Cleaner for LinkedIn — background service worker
+// Feed Cleaner for LinkedIn - background service worker
 // Jobs:
-//  1. Right-click context menus (mute / always-show an author) — forwards
+//  1. Right-click context menus (mute / always-show an author) - forwards
 //     clicks to the content script, which tracked the last right-clicked node.
 //  2. Per-tab badge counter: content scripts report their hidden count via
 //     lfc-count messages; we mirror it onto the toolbar icon for that tab.
@@ -10,6 +10,9 @@
 
 const MENU_MUTE = 'lfc-mute-author';
 const MENU_ALLOW = 'lfc-allow-author';
+const MENU_MUTE_PHRASE = 'lfc-mute-phrase';
+const MENU_ALLOW_POST = 'lfc-allow-post';
+const MENU_IDS = [MENU_MUTE, MENU_ALLOW, MENU_MUTE_PHRASE, MENU_ALLOW_POST];
 
 chrome.runtime.onInstalled.addListener(() => {
   // removeAll first: create() throws "duplicate id" if the menus survived a
@@ -27,19 +30,34 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ['page', 'link', 'selection'],
       documentUrlPatterns: ['https://www.linkedin.com/*'],
     });
+    chrome.contextMenus.create({
+      id: MENU_ALLOW_POST,
+      title: 'Always show this post',
+      contexts: ['page', 'link', 'selection'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
+    });
+    chrome.contextMenus.create({
+      id: MENU_MUTE_PHRASE,
+      // %s is replaced by the selected text at display time.
+      title: 'Mute posts containing "%s"',
+      contexts: ['selection'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
+    });
   });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab || !tab.id) return;
-  if (info.menuItemId !== MENU_MUTE && info.menuItemId !== MENU_ALLOW) return;
-  chrome.tabs.sendMessage(tab.id, { type: info.menuItemId }, (res) => {
-    // No content script listening — either a non-LinkedIn page, or (most
+  if (!MENU_IDS.includes(info.menuItemId)) return;
+  const msg = { type: info.menuItemId };
+  if (info.menuItemId === MENU_MUTE_PHRASE) msg.text = info.selectionText || '';
+  chrome.tabs.sendMessage(tab.id, msg, (res) => {
+    // No content script listening - either a non-LinkedIn page, or (most
     // common) the extension was reloaded after this tab loaded, so the tab's
     // listener is stale. A tab refresh fixes the latter.
     if (chrome.runtime.lastError) {
       console.warn(
-        '[LFC] Could not reach the content script — try refreshing the LinkedIn tab.',
+        '[LFC] Could not reach the content script - try refreshing the LinkedIn tab.',
         chrome.runtime.lastError.message
       );
       return;

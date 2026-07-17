@@ -1,11 +1,8 @@
-// Feed Cleaner for LinkedIn — options page logic
+// Feed Cleaner for LinkedIn - options page logic
 // Full management surface: filters, phrases, modules, author lists, stats,
 // and file-based settings backup. All state lives in chrome.storage.sync
 // (except lifetime stats, which are in storage.local).
-// LFC_DEFAULTS / LFC_SENSITIVITY_LEVELS come from shared.js.
-
-const SENSITIVITY_LABELS = { loose: 'Loose', medium: 'Medium', strict: 'Strict' };
-const $ = (id) => document.getElementById(id);
+// LFC_DEFAULTS / LFC_SENSITIVITY_LEVELS / $ / slider helpers come from shared.js.
 
 const TOGGLE_IDS = [
   'filterPromoted',
@@ -22,20 +19,16 @@ $('version').textContent = 'v' + chrome.runtime.getManifest().version;
 
 // --- Load current state ----------------------------------------------------
 
-function setSlider(rangeId, labelId, value) {
-  const idx = LFC_SENSITIVITY_LEVELS.indexOf(value);
-  const safe = idx >= 0 ? idx : 1;
-  $(rangeId).value = safe;
-  $(labelId).textContent = SENSITIVITY_LABELS[LFC_SENSITIVITY_LEVELS[safe]];
-}
-
 chrome.storage.sync.get(LFC_DEFAULTS, (s) => {
   for (const id of TOGGLE_IDS) $(id).checked = !!s[id];
+  // Reflects the indefinite switch only; a timed session (deepFocusUntil)
+  // is a popup affair and expires on its own.
+  $('deepFocus').checked = !!s.deepFocus;
   const modules = { ...LFC_DEFAULTS.hideModules, ...(s.hideModules || {}) };
   for (const [id, key] of Object.entries(MODULE_IDS)) $(id).checked = !!modules[key];
   $('mutedPhrases').value = (s.mutedPhrases || []).join('\n');
-  setSlider('hookSensitivity', 'sensitivityLabel', s.hookSensitivity);
-  setSlider('aiSensitivity', 'aiSensitivityLabel', s.aiSensitivity);
+  lfcSetSlider('hookSensitivity', 'sensitivityLabel', s.hookSensitivity);
+  lfcSetSlider('aiSensitivity', 'aiSensitivityLabel', s.aiSensitivity);
   renderAuthors('mutedList', 'mutedAuthors', s.mutedAuthors || []);
   renderAuthors('allowedList', 'allowedAuthors', s.allowedAuthors || []);
   $('allowedPostCount').textContent = (s.allowedPosts || []).length;
@@ -49,6 +42,12 @@ for (const id of TOGGLE_IDS) {
   });
 }
 
+// Not in TOGGLE_IDS: flipping Deep Focus here also clears any timed session
+// (deepFocusUntil), so "off" actually brings the feed back.
+$('deepFocus').addEventListener('change', (e) => {
+  syncSet({ deepFocus: e.target.checked, deepFocusUntil: 0 });
+});
+
 for (const id of Object.keys(MODULE_IDS)) {
   $(id).addEventListener('change', () => {
     const hideModules = {};
@@ -59,15 +58,8 @@ for (const id of Object.keys(MODULE_IDS)) {
   });
 }
 
-function wireSlider(rangeId, labelId, settingKey) {
-  $(rangeId).addEventListener('input', (e) => {
-    const level = LFC_SENSITIVITY_LEVELS[Number(e.target.value)] || 'medium';
-    $(labelId).textContent = SENSITIVITY_LABELS[level];
-    syncSet({ [settingKey]: level });
-  });
-}
-wireSlider('hookSensitivity', 'sensitivityLabel', 'hookSensitivity');
-wireSlider('aiSensitivity', 'aiSensitivityLabel', 'aiSensitivity');
+lfcWireSlider('hookSensitivity', 'sensitivityLabel', 'hookSensitivity');
+lfcWireSlider('aiSensitivity', 'aiSensitivityLabel', 'aiSensitivity');
 
 // --- Muted phrases (debounced, flushed on tab close) -------------------------
 
@@ -135,6 +127,9 @@ chrome.storage.sync.onChanged.addListener((changes) => {
   }
   if (changes.allowedPosts) {
     $('allowedPostCount').textContent = (changes.allowedPosts.newValue || []).length;
+  }
+  if (changes.deepFocus) {
+    $('deepFocus').checked = !!changes.deepFocus.newValue;
   }
 });
 
@@ -275,7 +270,7 @@ $('importFile').addEventListener('change', (e) => {
         importStatus('Import failed: ' + chrome.runtime.lastError.message, false);
         return;
       }
-      importStatus('Imported — settings applied.', true);
+      importStatus('Imported - settings applied.', true);
       location.reload();
     });
   };

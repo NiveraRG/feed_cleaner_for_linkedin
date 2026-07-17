@@ -1,4 +1,4 @@
-// Feed Cleaner for LinkedIn — content script
+// Feed Cleaner for LinkedIn - content script
 // Watches the feed for posts (including lazy-loaded ones), runs each post
 // through a set of independent filters, and collapses matches into a thin
 // "post hidden" placeholder bar (or dims them, in ghost mode) instead of
@@ -6,7 +6,7 @@
 //
 // LinkedIn currently ships TWO different feed DOMs:
 //  - "new" (2026 rewrite): obfuscated hashed class names, but stable
-//    data-testid hooks — mainFeed / expandable-text-box — and posts wrapped
+//    data-testid hooks - mainFeed / expandable-text-box - and posts wrapped
 //    in div[data-lazy-mount-id] units that mount their content lazily.
 //  - "classic": semantic class names like feed-shared-update-v2.
 // We support both; the new DOM is tried first.
@@ -17,7 +17,7 @@
   'use strict';
 
   // ---------------------------------------------------------------------
-  // Selectors — the fragile part. Update these when LinkedIn ships a redesign.
+  // Selectors - the fragile part. Update these when LinkedIn ships a redesign.
   // ---------------------------------------------------------------------
   const SELECTORS = {
     // New DOM: the feed column and its per-post lazy-mount wrappers.
@@ -25,6 +25,7 @@
     newPost: '[data-testid="mainFeed"] > div[data-lazy-mount-id]',
     newPostText: '[data-testid="expandable-text-box"]',
     // Classic DOM fallbacks.
+    classicFeed: 'main .scaffold-finite-scroll, .scaffold-layout__main .core-rail',
     classicPost: 'div.feed-shared-update-v2, div[data-id^="urn:li:activity"]',
     classicPostText: '.update-components-text, .feed-shared-update-v2__description',
     classicActorName: '.update-components-actor__title span[aria-hidden="true"], .update-components-actor__title',
@@ -34,6 +35,7 @@
 
   const MARKER = 'lfcProcessed'; // dataset flag so we never process a post twice
   const MODULE_MARKER = 'lfcModule'; // dataset flag for hidden non-post modules
+  const MODULE_SCANNED = 'lfcModScanned'; // unit classified by hideModules - skip next sweep
 
   // Reloading the extension in chrome://extensions leaves this content
   // script running in already-open tabs; any chrome.* call it then makes
@@ -53,16 +55,16 @@
   function invalidateContext() {
     contextInvalidated = true;
     if (feedObserver) feedObserver.disconnect();
-    if (snoozeTimer) {
-      clearTimeout(snoozeTimer);
-      snoozeTimer = null;
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
     }
   }
 
   // Every chrome.* call the content script makes after load goes through
   // here. Two failure modes to cover: the synchronous "Extension context
-  // invalidated" throw (caught below), and — because MV3 APIs return a
-  // promise when called WITHOUT a callback — unhandled rejections. So call
+  // invalidated" throw (caught below), and - because MV3 APIs return a
+  // promise when called WITHOUT a callback - unhandled rejections. So call
   // sites must always pass a callback (swallowLastError at minimum), which
   // keeps the API in callback mode and routes failures to lastError instead.
   function safeChromeCall(fn) {
@@ -80,12 +82,18 @@
 
   let settings = { ...LFC_DEFAULTS };
   let hiddenCount = 0; // posts hidden this session (this tab)
-  let snoozeTimer = null; // fires reprocessFeed() when a snooze expires
+  let refreshTimer = null; // fires reprocessFeed() when a snooze / focus session expires
+  let deepFocusRevealed = false; // "Show feed" clicked - this tab, this page-view only
 
   // Filtering is active only when the master switch is on and no snooze is
   // running. While inactive, sweeps still run (cheap) but hide nothing.
   function filteringActive() {
     return settings.enabled && Date.now() >= (settings.snoozeUntil || 0);
+  }
+
+  // Deep Focus is deliberately NOT gated on filteringActive() - see shared.js.
+  function deepFocusActive() {
+    return settings.deepFocus || Date.now() < (settings.deepFocusUntil || 0);
   }
 
   // Phrases that signal a "fake hustle story". 2+ matches => hide.
@@ -104,7 +112,7 @@
 
   // LinkedIn template posts: new job, work anniversary, certificates, and
   // similar "occasion" announcements. These are near-verbatim platform
-  // templates, so a single match is high-precision — hide on 1 hit.
+  // templates, so a single match is high-precision - hide on 1 hit.
   const OCCASION_PHRASES = [
     /i['’]m (happy|excited|thrilled|proud|pleased) to (share|announce) that i['’]m (starting|beginning|joining)/i,
     /starting a new position as/i,
@@ -207,7 +215,7 @@
         textBox &&
         !(a.compareDocumentPosition(textBox) & Node.DOCUMENT_POSITION_FOLLOWING)
       ) {
-        break; // we've passed the post body — stop
+        break; // we've passed the post body - stop
       }
       best = { name, url: normalizeUrl(a.href) };
     }
@@ -219,14 +227,36 @@
     return (href || '').split('?')[0].replace(/\/$/, '');
   }
 
+  // Per-evaluation cache so one shouldHide() pass reads each expensive
+  // source (getPostText, getAuthor, post.innerText - the last one forces a
+  // reflow) exactly once, however many filters consult it.
+  function makeCtx(post) {
+    return { post, text: null, innerText: null, author: null };
+  }
+  function ctxText(ctx) {
+    if (ctx.text === null) ctx.text = getPostText(ctx.post);
+    return ctx.text;
+  }
+  function ctxInnerText(ctx) {
+    if (ctx.innerText === null) ctx.innerText = ctx.post.innerText || '';
+    return ctx.innerText;
+  }
+  function ctxAuthor(ctx) {
+    if (ctx.author === null) ctx.author = getAuthor(ctx.post);
+    return ctx.author;
+  }
+
   // Stable-ish identity for "always show this post": author URL + a text
   // prefix. Survives page reloads; collisions are harmless (worst case an
   // identical repost by the same author stays visible too).
-  function postKey(post) {
-    const { url, name } = getAuthor(post);
-    const text = getPostText(post).slice(0, 80);
+  function postKeyFromCtx(ctx) {
+    const { url, name } = ctxAuthor(ctx);
+    const text = ctxText(ctx).slice(0, 80);
     if (!text && !url && !name) return '';
     return `${url || name}|${text}`;
+  }
+  function postKey(post) {
+    return postKeyFromCtx(makeCtx(post));
   }
 
   function authorMatches(list, author) {
@@ -240,45 +270,50 @@
   }
 
   // ---------------------------------------------------------------------
-  // Filters — each takes the post element (or its text) and returns true = hide.
+  // Filters - each takes the post element (or its text) and returns true = hide.
   // ---------------------------------------------------------------------
 
-  // 0. Allowlist — wins over everything. Never hide these.
-  function isAllowed(post) {
+  // 0. Allowlist - wins over everything. Never hide these.
+  function isAllowed(ctx) {
     if (
       settings.allowedAuthors.length &&
-      authorMatches(settings.allowedAuthors, getAuthor(post))
+      authorMatches(settings.allowedAuthors, ctxAuthor(ctx))
     ) {
       return true;
     }
     if (settings.allowedPosts.length) {
-      const key = postKey(post);
+      const key = postKeyFromCtx(ctx);
       if (key && settings.allowedPosts.includes(key)) return true;
     }
     return false;
   }
 
-  // 1. Manual mute list — checked first, before content filters.
-  function isMutedAuthor(post) {
+  // 1. Manual mute list - checked first, before content filters.
+  function isMutedAuthor(ctx) {
     if (!settings.mutedAuthors.length) return false;
-    return authorMatches(settings.mutedAuthors, getAuthor(post));
+    return authorMatches(settings.mutedAuthors, ctxAuthor(ctx));
   }
 
   // 2. Sponsored / Promoted posts. "Promoted" appears as a standalone header
-  // line (where the post age normally sits) — sometimes with a sponsor name,
-  // e.g. "Promoted by KNOWLIMITS Group a.s." — so we match an exact line or
+  // line (where the post age normally sits) - sometimes with a sponsor name,
+  // e.g. "Promoted by KNOWLIMITS Group a.s." - so we match an exact line or
   // an exact "Promoted by " prefix in the first dozen lines. This avoids
   // false positives on posts that merely mention the word "Promoted".
-  function isPromotedHeader(post) {
-    const lines = (post.innerText || '').split('\n', 14);
+  function isPromotedText(innerText) {
+    const lines = (innerText || '').split('\n', 14);
     return lines.some((l) => {
       const t = l.trim();
       return t === 'Promoted' || t.startsWith('Promoted by ');
     });
   }
 
-  function isPromoted(post) {
-    return settings.filterPromoted && isPromotedHeader(post);
+  // Element-based variant for findPosts(), which runs before any ctx exists.
+  function isPromotedHeader(post) {
+    return isPromotedText(post.innerText);
+  }
+
+  function isPromoted(ctx) {
+    return settings.filterPromoted && isPromotedText(ctxInnerText(ctx));
   }
 
   // 3. Keyword / phrase muting against post text. Plain lines are escaped
@@ -290,24 +325,37 @@
         // Force case-insensitive to match plain-phrase behavior.
         return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i');
       } catch {
-        // Invalid pattern — fall through and treat the line literally.
+        // Invalid pattern - fall through and treat the line literally.
       }
     }
     const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(escaped, 'i');
   }
 
+  // Muted phrases are recompiled only when the setting changes (settings
+  // load + storage.onChanged), not per post per sweep.
+  let compiledPhrases = [];
+  function compilePhrases() {
+    compiledPhrases = (settings.mutedPhrases || [])
+      .map((phrase) => String(phrase).trim())
+      .filter(Boolean)
+      .map((p) =>
+        // "thoughts?" only counts as a standalone CTA line, not mid-sentence.
+        p.toLowerCase() === 'thoughts?'
+          ? { standalone: true, re: /^thoughts\?+$/i }
+          : { standalone: false, re: phraseToRegex(p) }
+      );
+  }
+
   function matchesMutedPhrase(text) {
-    if (!settings.filterKeywords || !text) return false;
-    const lines = text.split('\n').map((l) => l.trim());
-    return settings.mutedPhrases.some((phrase) => {
-      const p = String(phrase).trim();
-      if (!p) return false;
-      // "thoughts?" only counts as a standalone CTA line, not mid-sentence.
-      if (p.toLowerCase() === 'thoughts?') {
-        return lines.some((l) => /^thoughts\?+$/i.test(l));
+    if (!settings.filterKeywords || !text || !compiledPhrases.length) return false;
+    let lines = null; // lazily split - most phrases match against full text
+    return compiledPhrases.some(({ standalone, re }) => {
+      if (standalone) {
+        if (!lines) lines = text.split('\n').map((l) => l.trim());
+        return lines.some((l) => re.test(l));
       }
-      return phraseToRegex(p).test(text);
+      return re.test(text);
     });
   }
 
@@ -359,12 +407,12 @@
   }
 
   // Run all filters; return a human-readable reason, or null to keep the post.
-  function shouldHide(post) {
+  function shouldHide(ctx) {
     if (!filteringActive()) return null;
-    if (isAllowed(post)) return null;
-    if (isMutedAuthor(post)) return 'muted author';
-    if (isPromoted(post)) return 'promoted';
-    const text = getPostText(post);
+    if (isAllowed(ctx)) return null;
+    if (isMutedAuthor(ctx)) return 'muted author';
+    if (isPromoted(ctx)) return 'promoted';
+    const text = ctxText(ctx);
     if (matchesMutedPhrase(text)) return 'muted phrase';
     if (isOccasionPost(text)) return 'occasion post'; // template posts: most specific
     if (isHustleStory(text)) return 'hustle story'; // before hook: more specific
@@ -374,7 +422,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Hide / show UI — collapse into a placeholder bar (or dim, in ghost
+  // Hide / show UI - collapse into a placeholder bar (or dim, in ghost
   // mode), never delete.
   // ---------------------------------------------------------------------
 
@@ -465,7 +513,7 @@
       'border-radius:6px;padding:2px 10px;margin:4px 0;display:flex;' +
       'align-items:center;justify-content:space-between;';
     const label = document.createElement('span');
-    label.textContent = `hidden (${reason}) — ghost mode`;
+    label.textContent = `hidden (${reason}) - ghost mode`;
     const restore = makeBarButton('Restore');
     restore.addEventListener('click', () => {
       post.style.opacity = '';
@@ -488,10 +536,10 @@
     pymk: [/^people you may know$/i, /^add to your feed$/i, /^people to follow$/i],
   };
 
-  function moduleType(unit) {
-    // Match against the unit's first few non-empty lines only — a real post
+  function moduleType(unitText) {
+    // Match against the unit's first few non-empty lines only - a real post
     // quoting "people you may know" mid-body must not trigger this.
-    const lines = (unit.innerText || '')
+    const lines = (unitText || '')
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
@@ -510,16 +558,36 @@
         `${SELECTORS.newPost}, ${SELECTORS.classicPost}`
       );
       for (const unit of units) {
-        if (unit.dataset[MODULE_MARKER] || unit.dataset[MARKER]) continue;
-        // Only treat unit as a module if it has NO post text box — real
+        if (
+          unit.dataset[MODULE_MARKER] ||
+          unit.dataset[MARKER] ||
+          unit.dataset[MODULE_SCANNED]
+        ) {
+          continue;
+        }
+        // Only treat unit as a module if it has NO post text box - real
         // posts always have one; modules are link/card grids.
         if (unit.querySelector(SELECTORS.newPostText) ||
-            unit.querySelector(SELECTORS.classicPostText)) continue;
-        const type = moduleType(unit);
+            unit.querySelector(SELECTORS.classicPostText)) {
+          unit.dataset[MODULE_SCANNED] = '1'; // real post - never a module
+          continue;
+        }
+        const text = unit.innerText || '';
+        const type = moduleType(text);
         if (type && wants[type]) {
           unit.dataset[MODULE_MARKER] = type;
           unit.style.display = 'none';
           reportHidden('module');
+          continue;
+        }
+        // Mark only units with enough mounted content to classify with
+        // confidence; empty/half-mounted lazy wrappers must stay unmarked so
+        // the next sweep re-checks them once their content arrives.
+        if (
+          text.length > 80 &&
+          text.split('\n').filter((l) => l.trim()).length >= 3
+        ) {
+          unit.dataset[MODULE_SCANNED] = '1';
         }
       }
     }
@@ -540,6 +608,101 @@
       el.style.display = '';
       delete el.dataset[MODULE_MARKER];
     });
+    // Clear scan markers too, so toggling a module setting re-evaluates
+    // units that were previously classified as "not a wanted module".
+    document.querySelectorAll('[data-lfc-mod-scanned]').forEach((el) => {
+      delete el.dataset[MODULE_SCANNED];
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Deep Focus - hide the whole feed behind a calm panel. Independent of
+  // pause/snooze; owns its own panel class + teardown (NOT .lfc-placeholder,
+  // so reprocessFeed's blanket bar removal can't orphan a hidden feed).
+  // ---------------------------------------------------------------------
+
+  const DF_MARKER = 'lfcDeepfocus'; // dataset flag on the hidden feed container
+  const DF_NEWS = 'news-df'; // MODULE_MARKER value for asides Deep Focus hid
+
+  function buildDeepFocusPanel() {
+    const panel = document.createElement('div');
+    panel.className = 'lfc-deepfocus-panel';
+    panel.style.cssText =
+      'padding:28px 24px;margin:8px 0;text-align:center;font-size:14px;' +
+      'color:#444;background:#f3f2ef;border:1px solid #e0dfdc;border-radius:10px;';
+    const title = document.createElement('div');
+    title.textContent = 'Deep Focus is on';
+    title.style.cssText = 'font-weight:600;font-size:16px;margin-bottom:4px;';
+    const sub = document.createElement('div');
+    const until = settings.deepFocusUntil || 0;
+    sub.textContent =
+      !settings.deepFocus && until > Date.now()
+        ? `Your feed is hidden until ${new Date(until).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}.`
+        : 'Your feed is hidden.';
+    sub.style.cssText = 'font-size:13px;color:#666;margin-bottom:12px;';
+    const actions = document.createElement('div');
+    const showBtn = makeBarButton('Show feed');
+    showBtn.title = 'Reveal the feed in this tab only';
+    showBtn.addEventListener('click', () => {
+      deepFocusRevealed = true;
+      removeDeepFocus();
+      processAllPosts(); // normal filtering resumes on the revealed feed
+    });
+    const endBtn = makeBarButton('End Deep Focus');
+    endBtn.addEventListener('click', () => {
+      // storage.onChanged reprocesses every LinkedIn tab.
+      safeChromeCall(() =>
+        chrome.storage.sync.set({ deepFocus: false, deepFocusUntil: 0 }, swallowLastError)
+      );
+    });
+    actions.append(showBtn, endBtn);
+    panel.append(title, sub, actions);
+    return panel;
+  }
+
+  // Returns true while Deep Focus owns the page (callers skip post/module work).
+  function applyDeepFocus() {
+    if (!deepFocusActive() || deepFocusRevealed) {
+      removeDeepFocus();
+      return false;
+    }
+    const feed =
+      document.querySelector(SELECTORS.feed) ||
+      document.querySelector(SELECTORS.classicFeed);
+    // No recognizable feed container (profile page, or DOM changed): fall
+    // back to normal per-post filtering rather than doing nothing at all.
+    if (!feed) return false;
+    if (!feed.dataset[DF_MARKER] || !document.querySelector('.lfc-deepfocus-panel')) {
+      document.querySelectorAll('.lfc-deepfocus-panel').forEach((p) => p.remove());
+      feed.dataset[DF_MARKER] = '1';
+      feed.style.display = 'none';
+      feed.parentNode.insertBefore(buildDeepFocusPanel(), feed);
+    }
+    // A focus mode that leaves LinkedIn News glowing in the sidebar isn't
+    // one - hide it too, tagged separately from the hideModules.news flow.
+    for (const aside of document.querySelectorAll('aside')) {
+      if (aside.dataset[MODULE_MARKER]) continue;
+      if (/linkedin news|top stories/i.test((aside.innerText || '').slice(0, 400))) {
+        aside.dataset[MODULE_MARKER] = DF_NEWS;
+        aside.style.display = 'none';
+      }
+    }
+    return true;
+  }
+
+  function removeDeepFocus() {
+    document.querySelectorAll('.lfc-deepfocus-panel').forEach((p) => p.remove());
+    document.querySelectorAll('[data-lfc-deepfocus]').forEach((feed) => {
+      feed.style.display = '';
+      delete feed.dataset[DF_MARKER];
+    });
+    document.querySelectorAll(`[data-lfc-module="${DF_NEWS}"]`).forEach((el) => {
+      el.style.display = '';
+      delete el.dataset[MODULE_MARKER];
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -549,11 +712,14 @@
   function processPost(post) {
     if (post.dataset[MARKER] || post.dataset[MODULE_MARKER]) return;
     post.dataset[MARKER] = '1';
-    const reason = shouldHide(post);
+    const reason = shouldHide(makeCtx(post));
     if (reason) collapsePost(post, reason);
   }
 
   function processAllPosts() {
+    // Deep Focus first: while it owns the page the feed is hidden wholesale,
+    // so per-post and module work would be wasted (and invisible).
+    if (applyDeepFocus()) return;
     // Modules first: a PYMK unit can look like a post to findPosts() (many
     // profile links); if processPost marked it first, the module check would
     // skip it forever.
@@ -581,23 +747,30 @@
       chrome.runtime.sendMessage({ type: 'lfc-count', count: 0 }, swallowLastError)
     );
     processAllPosts();
-    scheduleSnoozeExpiry();
+    scheduleTimedRefresh();
   }
 
-  // If a snooze is running, arrange to re-filter the moment it expires —
-  // otherwise the feed stays unfiltered until the next DOM mutation.
-  function scheduleSnoozeExpiry() {
-    if (snoozeTimer) {
-      clearTimeout(snoozeTimer);
-      snoozeTimer = null;
+  // If a snooze or a timed Deep Focus session is running, arrange to
+  // reprocess the moment the earliest one expires - otherwise the feed
+  // stays in the stale state until the next DOM mutation.
+  function scheduleTimedRefresh() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
     }
-    const remaining = (settings.snoozeUntil || 0) - Date.now();
-    if (settings.enabled && remaining > 0) {
-      snoozeTimer = setTimeout(() => {
-        snoozeTimer = null;
-        reprocessFeed();
-      }, remaining + 1000);
+    const now = Date.now();
+    const deadlines = [];
+    if (settings.enabled && (settings.snoozeUntil || 0) > now) {
+      deadlines.push(settings.snoozeUntil);
     }
+    if ((settings.deepFocusUntil || 0) > now) {
+      deadlines.push(settings.deepFocusUntil);
+    }
+    if (!deadlines.length) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      reprocessFeed();
+    }, Math.min(...deadlines) - now + 1000);
   }
 
   // ---------------------------------------------------------------------
@@ -648,11 +821,62 @@
     sendResponse({ ok: true, author });
   }
 
+  // "Mute posts containing <selection>": append the selected text to the
+  // muted-phrases list. One sync write per click (quota-safe);
+  // storage.onChanged recompiles the regexes and reprocesses the feed.
+  function mutePhraseFromSelection(rawText, sendResponse) {
+    const phrase = String(rawText || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (!phrase) {
+      sendResponse({ ok: false, error: 'Select some text in a post first.' });
+      return;
+    }
+    const exists = settings.mutedPhrases.some(
+      (p) => String(p).trim().toLowerCase() === phrase.toLowerCase()
+    );
+    if (!exists) {
+      const updated = [...settings.mutedPhrases, phrase];
+      safeChromeCall(() =>
+        chrome.storage.sync.set({ mutedPhrases: updated }, swallowLastError)
+      );
+    }
+    sendResponse({ ok: true, phrase });
+  }
+
+  // "Always show this post": persist the right-clicked post's key and
+  // restore it immediately (reprocessFeed via storage.onChanged would do it
+  // anyway, but this makes the click feel instant).
+  function allowPostFromClick(sendResponse) {
+    const post = postFromLastClick();
+    if (!post) {
+      sendResponse({
+        ok: false,
+        error: 'Could not find the post. Right-click inside the post you want to keep.',
+      });
+      return;
+    }
+    const key = postKey(post);
+    if (!key) {
+      sendResponse({ ok: false, error: 'Could not identify the post.' });
+      return;
+    }
+    allowPostForever(post);
+    post.style.display = '';
+    post.style.opacity = '';
+    delete post.dataset.lfcGhost;
+    const prev = post.previousElementSibling;
+    if (prev && prev.classList.contains('lfc-placeholder')) prev.remove();
+    sendResponse({ ok: true });
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'lfc-mute-author') {
       addAuthorToList('mutedAuthors', sendResponse);
     } else if (msg.type === 'lfc-allow-author') {
       addAuthorToList('allowedAuthors', sendResponse);
+    } else if (msg.type === 'lfc-mute-phrase') {
+      mutePhraseFromSelection(msg.text, sendResponse);
+    } else if (msg.type === 'lfc-allow-post') {
+      allowPostFromClick(sendResponse);
     } else if (msg.type === 'lfc-get-count') {
       sendResponse({ hiddenCount });
     }
@@ -665,33 +889,45 @@
 
   chrome.storage.sync.get(LFC_DEFAULTS, (stored) => {
     settings = { ...LFC_DEFAULTS, ...stored };
+    compilePhrases();
     // Clear any stale badge left over from before this (re)load.
     safeChromeCall(() =>
       chrome.runtime.sendMessage({ type: 'lfc-count', count: 0 }, swallowLastError)
     );
     processAllPosts();
-    scheduleSnoozeExpiry();
+    scheduleTimedRefresh();
 
     // New-DOM posts mount their content lazily inside pre-inserted wrappers,
     // so per-added-node processing would fire before the content exists.
     // Instead: any mutation schedules one debounced full sweep. The sweep is
-    // cheap — findPosts() scans a few dozen nodes and the MARKER flag skips
+    // cheap - findPosts() scans a few dozen nodes and the MARKER flag skips
     // everything already handled.
     let sweepTimer = null;
+    let sweepDirty = false; // mutations arrived while a sweep was pending
+    const runSweep = () => {
+      sweepTimer = null;
+      try {
+        processAllPosts();
+      } catch (err) {
+        // Only tear down if the extension context is actually gone; a
+        // one-off DOM error must not kill the observer for the whole page.
+        if (!isContextValid()) return;
+        console.warn('[LFC] sweep failed:', err);
+      }
+      // Trailing edge: content that mounted during the sweep window would
+      // otherwise sit unprocessed until the next unrelated mutation.
+      if (sweepDirty) {
+        sweepDirty = false;
+        sweepTimer = setTimeout(runSweep, 250);
+      }
+    };
     feedObserver = new MutationObserver(() => {
       if (!isContextValid()) return;
-      if (sweepTimer) return;
-      sweepTimer = setTimeout(() => {
-        sweepTimer = null;
-        try {
-          processAllPosts();
-        } catch (err) {
-          // Only tear down if the extension context is actually gone; a
-          // one-off DOM error must not kill the observer for the whole page.
-          if (!isContextValid()) return;
-          console.warn('[LFC] sweep failed:', err);
-        }
-      }, 250);
+      if (sweepTimer) {
+        sweepDirty = true;
+        return;
+      }
+      sweepTimer = setTimeout(runSweep, 250);
     });
     feedObserver.observe(document.body, { childList: true, subtree: true });
   });
@@ -700,9 +936,18 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     for (const [key, { newValue }] of Object.entries(changes)) {
-      // A removed key arrives as newValue === undefined — fall back to the
+      // A removed key arrives as newValue === undefined - fall back to the
       // default instead of poisoning settings (e.g. mutedAuthors.length throws).
       settings[key] = newValue === undefined ? LFC_DEFAULTS[key] : newValue;
+    }
+    if ('mutedPhrases' in changes) compilePhrases();
+    // A new focus session (from any surface) cancels this tab's "Show feed"
+    // override; ending one clears it too so the next session starts hidden.
+    // Tear the panel down so applyDeepFocus rebuilds it - otherwise a
+    // switch between "On" and a timed session keeps stale "until" text.
+    if ('deepFocus' in changes || 'deepFocusUntil' in changes) {
+      deepFocusRevealed = false;
+      removeDeepFocus();
     }
     reprocessFeed();
   });
