@@ -285,10 +285,61 @@ def shot_stats():
                "Lifetime counts of what was hidden and why &#8212; plus one-click backup and restore, all offline.",
                content, "screenshot-3-stats-1280x800")
 
+# ---------------------------------------------------------------- social promo (v1.3.0)
+def deep_focus_panel(x, y, w):
+    h = 176
+    e = [f'<g transform="translate({x},{y})">',
+         f'<rect width="{w}" height="{h}" rx="14" fill="{FEEDBG}" stroke="#dfe3e6" stroke-width="1.5" filter="url(#sh)"/>']
+    cx = w / 2
+    e.append(f'<text x="{cx}" y="66" font-family="{F}" font-size="23" font-weight="bold" fill="{INK}" text-anchor="middle">Deep Focus is on</text>')
+    e.append(f'<text x="{cx}" y="94" font-family="{F}" font-size="16" fill="{GREY}" text-anchor="middle">Your feed is hidden until 11:27 AM.</text>')
+    e.append(f'<text x="{cx-70}" y="136" font-family="{F}" font-size="16" font-weight="bold" fill="{BLUE}" text-anchor="middle">Show feed</text>')
+    e.append(f'<text x="{cx+90}" y="136" font-family="{F}" font-size="16" font-weight="bold" fill="{BLUE}" text-anchor="middle">End Deep Focus</text>')
+    e.append('</g>')
+    return "".join(e)
+
+def social_promo_130():
+    W = H = 1080
+    m = 72
+    panel_w = W - 2 * m
+    bullets = [
+        "Select text in a post and right-click to mute that phrase.",
+        "Right-click a post, or its hidden bar, to always show it going forward.",
+        "Feed processing is faster, including during fast scrolling.",
+        "Popup and settings now share one consistent style.",
+        "Removed the non-functional Hide dimfluencers placeholder.",
+    ]
+    bullet_rows = []
+    by = 664
+    for b in bullets:
+        bullet_rows.append(f'<rect x="{m}" y="{by-14}" width="10" height="10" rx="2" fill="{CORAL}"/>')
+        bullet_rows.append(f'<text x="{m+24}" y="{by}" font-family="{F}" font-size="18.5" fill="#eaf3fc">{b}</text>')
+        by += 38
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">
+{defs()}
+<rect width="{W}" height="{H}" fill="url(#bg)"/>
+<circle cx="1030" cy="30" r="220" fill="#ffffff" opacity="0.05"/>
+<circle cx="40" cy="1060" r="240" fill="#ffffff" opacity="0.05"/>
+{logo(m, m, 96)}
+<text x="{m+118}" y="{m+40}" font-family="{F}" font-size="32" font-weight="bold" fill="#fff">Feed Cleaner for LinkedIn</text>
+<text x="{m+118}" y="{m+70}" font-family="{F}" font-size="18" fill="#cfe3f7">v1.3.0 &#183; Released July 17, 2026</text>
+<rect x="{m+118}" y="{m+84}" width="52" height="4" rx="2" fill="{CORAL}"/>
+<text x="{m}" y="264" font-family="{F}" font-size="34" font-weight="bold" fill="#fff">Deep Focus hides the entire feed</text>
+<text x="{m}" y="306" font-family="{F}" font-size="34" font-weight="bold" fill="#fff">behind a calm panel.</text>
+<text x="{m}" y="344" font-family="{F}" font-size="18" fill="#cfe3f7">Turn it on indefinitely or for one hour, from the popup or the settings page.</text>
+<text x="{m}" y="370" font-family="{F}" font-size="18" fill="#cfe3f7">Independent of pause and snooze, so pausing filters never reveals the feed.</text>
+{deep_focus_panel(m, 404, panel_w)}
+<text x="{m}" y="628" font-family="{F}" font-size="20" font-weight="bold" fill="#fff">Also in v1.3.0</text>
+<rect x="{m}" y="640" width="40" height="3" rx="1.5" fill="{CORAL}"/>
+{"".join(bullet_rows)}
+<text x="{m}" y="1000" font-family="{F}" font-size="14" fill="#a9cbeb">Independent project. Not affiliated with LinkedIn Corporation.</text>
+</svg>'''
+    render("social-promo-v1.3.0-1080x1080", svg, W, H)
+
 small_tile()
 marquee()
 shot_popup()
 shot_feed()
 shot_stats()
+social_promo_130()
 print("done")
-                                                                                                                                                                                                                                     

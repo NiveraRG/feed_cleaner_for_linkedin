@@ -11,6 +11,7 @@ const TOGGLE_IDS = [
   'enabled',
   'filterPromoted',
   'filterKeywords',
+  'filterNetworkOnly',
   'filterOccasions',
   'filterHooks',
   'filterHustle',

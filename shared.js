@@ -22,6 +22,10 @@ const LFC_DEFAULTS = {
   filterHustle: true,
   filterAI: true,
   filterOccasions: true, // new-job / anniversary / certificate template posts
+  // Keep only updates from first-degree connections and accounts marked as
+  // followed in LinkedIn's English UI. Off by default: uncertain relationship
+  // metadata always stays visible until the feed finishes mounting it.
+  filterNetworkOnly: false,
 
   hookSensitivity: 'medium', // loose | medium | strict
   aiSensitivity: 'medium', // loose | medium | strict

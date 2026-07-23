@@ -2,6 +2,14 @@
 
 All notable changes to Feed Cleaner for LinkedIn.
 
+## Unreleased
+
+### Added
+- **Connections & follows only**: an opt-in, English-UI filter that keeps
+  first-degree connections and accounts you follow, while collapsing explicit
+  out-of-network posts. Unclear lazy-mounted relationship metadata stays
+  visible until it can be identified.
+
 ## 1.3.0 - 2026-07-17
 
 ### Added

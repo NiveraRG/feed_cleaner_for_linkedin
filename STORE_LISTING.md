@@ -38,10 +38,11 @@ Filters sponsored posts, hustle-bait, hook-format spam, and AI-generated posts o
 Feed Cleaner for LinkedIn quietly filters the noise out of your LinkedIn
 feed - right in your browser, with nothing sent anywhere.
 
-WHAT IT FILTERS (each is a toggle, all on by default except feed modules)
+WHAT IT FILTERS (each is a toggle, all on by default except Network-only and feed modules)
 • Sponsored / Promoted posts
 • Muted phrases you choose ("humbled to announce", "thoughts?", etc. -
   add your own, plain text or regex)
+• Optional: Only show first-degree connections and accounts you follow
 • New-job / work-anniversary / certificate "occasion" template posts
 • Hook-bait posts built from stacks of one-line "hook" sentences
   ("The 3 things that changed my career:")

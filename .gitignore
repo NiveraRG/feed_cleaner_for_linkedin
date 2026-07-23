@@ -1,5 +1,8 @@
 # Claude Code project instructions — internal dev notes, not for the public repo
 CLAUDE.md
+AGENTS.md
+FIREFOX_LISTING.md
+STORE_LISTING.md
 
 # Store submission build artifacts — regenerate via STORE_LISTING.md / FIREFOX_LISTING.md
 *.zip

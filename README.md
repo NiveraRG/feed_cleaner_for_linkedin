@@ -33,6 +33,7 @@ again with one click, or dim in place if you turn on Ghost mode.
 | --- | --- |
 | **Sponsored / Promoted** | Ads in the feed. |
 | **Muted phrases** | Any phrase you choose - plain text or advanced regex, one per line. |
+| **Connections & follows only** *(optional)* | Keeps first-degree connections and accounts you follow; explicit out-of-network posts are hidden. |
 | **Occasion posts** | New-job announcements, work anniversaries, certificate/course-completion posts. |
 | **Hook-format posts** | "The 3 things that changed my career:" style posts - many short punchy lines up top. Adjustable sensitivity. |
 | **Fake hustle stories** | "$0 to $1M", "they laughed at me", "I got fired and then..." - the whole genre. |
@@ -52,6 +53,9 @@ way your bookmarks do - never through us.
 
 - "Promoted" and occasion-post detection currently match English-language
   labels only.
+- The Connections & follows only filter currently recognizes relationship
+  labels in the English LinkedIn UI. Posts whose relationship metadata has not
+  mounted yet stay visible.
 - AI-post and hook-format detection are heuristic, not perfect - you can
   always mark a wrongly-hidden post "Always show," or a person as allowed,
   to fix it permanently.

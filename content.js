@@ -31,11 +31,15 @@
     classicActorName: '.update-components-actor__title span[aria-hidden="true"], .update-components-actor__title',
     // Works in both DOMs: any profile/company link inside the post.
     profileLink: 'a[href*="/in/"], a[href*="/company/"]',
+    // Relationship labels in the current DOM are text/accessible labels, not
+    // stable elements. Keep the elements inspected for those labels here.
+    metadataLabel: 'span, button, [aria-label], [title]',
   };
 
   const MARKER = 'lfcProcessed'; // dataset flag so we never process a post twice
   const MODULE_MARKER = 'lfcModule'; // dataset flag for hidden non-post modules
   const MODULE_SCANNED = 'lfcModScanned'; // unit classified by hideModules - skip next sweep
+  const NETWORK_PENDING = 'lfcNetworkPending'; // metadata not mounted yet; retry next sweep
 
   // Reloading the extension in chrome://extensions leaves this content
   // script running in already-open tabs; any chrome.* call it then makes
@@ -193,15 +197,11 @@
     return el ? el.innerText.trim() : '';
   }
 
-  function getAuthor(post) {
+  function findAuthorLink(post) {
     // Classic DOM has a dedicated actor-name node.
     const classicName = post.querySelector(SELECTORS.classicActorName);
     if (classicName) {
-      const link = post.querySelector(SELECTORS.profileLink);
-      return {
-        name: classicName.innerText.trim(),
-        url: link ? normalizeUrl(link.href) : '',
-      };
+      return classicName.closest(SELECTORS.profileLink) || post.querySelector(SELECTORS.profileLink);
     }
     // New DOM: the author is the LAST named profile link that appears before
     // the post text. (Earlier named links are "X commented on this" headers.)
@@ -217,9 +217,25 @@
       ) {
         break; // we've passed the post body - stop
       }
-      best = { name, url: normalizeUrl(a.href) };
+      best = a;
     }
-    return best || { name: '', url: '' };
+    return best;
+  }
+
+  function getAuthor(post, authorLink = findAuthorLink(post)) {
+    // Classic DOM has a dedicated actor-name node.
+    const classicName = post.querySelector(SELECTORS.classicActorName);
+    if (classicName) {
+      return {
+        name: classicName.innerText.trim(),
+        url: authorLink ? normalizeUrl(authorLink.href) : '',
+      };
+    }
+    if (!authorLink) return { name: '', url: '' };
+    return {
+      name: (authorLink.innerText || '').trim().split('\n')[0].trim(),
+      url: normalizeUrl(authorLink.href),
+    };
   }
 
   function normalizeUrl(href) {
@@ -231,7 +247,14 @@
   // source (getPostText, getAuthor, post.innerText - the last one forces a
   // reflow) exactly once, however many filters consult it.
   function makeCtx(post) {
-    return { post, text: null, innerText: null, author: null };
+    return {
+      post,
+      text: null,
+      innerText: null,
+      author: null,
+      authorLink: undefined,
+      networkStatus: null,
+    };
   }
   function ctxText(ctx) {
     if (ctx.text === null) ctx.text = getPostText(ctx.post);
@@ -242,8 +265,67 @@
     return ctx.innerText;
   }
   function ctxAuthor(ctx) {
-    if (ctx.author === null) ctx.author = getAuthor(ctx.post);
+    if (ctx.author === null) ctx.author = getAuthor(ctx.post, ctxAuthorLink(ctx));
     return ctx.author;
+  }
+  function ctxAuthorLink(ctx) {
+    if (ctx.authorLink === undefined) ctx.authorLink = findAuthorLink(ctx.post);
+    return ctx.authorLink;
+  }
+
+  // LinkedIn does not expose a stable relationship attribute in the 2026
+  // rewrite. Read only the compact metadata area around the resolved author,
+  // never the post body: exact English labels are the deliberately
+  // conservative signal for this opt-in filter.
+  const NETWORK_LABELS = {
+    connected: new Set(['1st', '1st degree connection']),
+    following: new Set(['following']),
+    outside: new Set([
+      '2nd',
+      '2nd degree connection',
+      '3rd',
+      '3rd+',
+      '3rd degree connection',
+      'follow',
+    ]),
+  };
+
+  function isBeforePostBody(el, textBox) {
+    return !textBox || !!(el.compareDocumentPosition(textBox) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+
+  function relationshipFromMetadata(root) {
+    const labels = [root, ...root.querySelectorAll(SELECTORS.metadataLabel)]
+      .flatMap((el) => [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')])
+      .map((value) => (value || '').trim().toLowerCase())
+      .filter(Boolean);
+    if (labels.some((label) => NETWORK_LABELS.connected.has(label))) return 'connected';
+    if (labels.some((label) => NETWORK_LABELS.following.has(label))) return 'following';
+    if (labels.some((label) => NETWORK_LABELS.outside.has(label))) return 'outside';
+    return 'unknown';
+  }
+
+  function getNetworkStatus(post, authorLink) {
+    if (!authorLink) return 'unknown';
+    const textBox =
+      post.querySelector(SELECTORS.newPostText) || post.querySelector(SELECTORS.classicPostText);
+    // Start at the author link and expand only while the container remains
+    // before the body and has a single profile link. That prevents a repost
+    // header or body mention from supplying another person's relationship.
+    for (let el = authorLink; el && el !== post; el = el.parentElement) {
+      if (!isBeforePostBody(el, textBox)) break;
+      if (el.querySelectorAll(SELECTORS.profileLink).length > 1) break;
+      const status = relationshipFromMetadata(el);
+      if (status !== 'unknown') return status;
+    }
+    return 'unknown';
+  }
+
+  function ctxNetworkStatus(ctx) {
+    if (ctx.networkStatus === null) {
+      ctx.networkStatus = getNetworkStatus(ctx.post, ctxAuthorLink(ctx));
+    }
+    return ctx.networkStatus;
   }
 
   // Stable-ish identity for "always show this post": author URL + a text
@@ -314,6 +396,13 @@
 
   function isPromoted(ctx) {
     return settings.filterPromoted && isPromotedText(ctxInnerText(ctx));
+  }
+
+  // Only explicit non-network relationship labels hide a post. Missing or
+  // ambiguous labels are retried on later mutation sweeps rather than risking
+  // a false positive while LinkedIn lazily mounts the author header.
+  function isOutsideNetwork(ctx) {
+    return settings.filterNetworkOnly && ctxNetworkStatus(ctx) === 'outside';
   }
 
   // 3. Keyword / phrase muting against post text. Plain lines are escaped
@@ -412,6 +501,7 @@
     if (isAllowed(ctx)) return null;
     if (isMutedAuthor(ctx)) return 'muted author';
     if (isPromoted(ctx)) return 'promoted';
+    if (isOutsideNetwork(ctx)) return 'outside network';
     const text = ctxText(ctx);
     if (matchesMutedPhrase(text)) return 'muted phrase';
     if (isOccasionPost(text)) return 'occasion post'; // template posts: most specific
@@ -711,8 +801,23 @@
 
   function processPost(post) {
     if (post.dataset[MARKER] || post.dataset[MODULE_MARKER]) return;
+    const ctx = makeCtx(post);
+    // Keep the priority rules intact before deferring: an allowlisted, muted,
+    // or promoted post does not need relationship metadata to be decided.
+    if (
+      filteringActive() &&
+      settings.filterNetworkOnly &&
+      !isAllowed(ctx) &&
+      !isMutedAuthor(ctx) &&
+      !isPromoted(ctx) &&
+      ctxNetworkStatus(ctx) === 'unknown'
+    ) {
+      post.dataset[NETWORK_PENDING] = '1';
+      return;
+    }
     post.dataset[MARKER] = '1';
-    const reason = shouldHide(makeCtx(post));
+    delete post.dataset[NETWORK_PENDING];
+    const reason = shouldHide(ctx);
     if (reason) collapsePost(post, reason);
   }
 
@@ -737,6 +842,9 @@
       post.style.opacity = '';
       delete post.dataset[MARKER];
       delete post.dataset.lfcGhost;
+    });
+    document.querySelectorAll('[data-lfc-network-pending]').forEach((post) => {
+      delete post.dataset[NETWORK_PENDING];
     });
     unhideModules();
     // Everything is visible again; restart the count so re-collapsed posts

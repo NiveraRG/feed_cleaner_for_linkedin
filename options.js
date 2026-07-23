@@ -7,6 +7,7 @@
 const TOGGLE_IDS = [
   'filterPromoted',
   'filterKeywords',
+  'filterNetworkOnly',
   'filterOccasions',
   'filterHooks',
   'filterHustle',
@@ -139,6 +140,7 @@ const REASON_LABELS = {
   promoted: 'Promoted',
   'muted author': 'Muted authors',
   'muted phrase': 'Muted phrases',
+  'outside network': 'Outside network',
   'hustle story': 'Hustle stories',
   'AI-generated': 'AI-generated',
   'hook format': 'Hook format',
